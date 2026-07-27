@@ -22,6 +22,10 @@ function describeStatus(status) {
     parts.push(`${Math.round(weather.temperature)}${weather.unit} ${weather.text || ""}`.trim());
   }
   if (status.overlay_visible) parts.push("info showing");
+  const disk = status.storage;
+  if (disk && disk.level !== "ok") {
+    parts.push(`⚠ ${formatBytes(disk.free_bytes)} free`);
+  }
   return parts.join(" · ");
 }
 
@@ -190,6 +194,7 @@ async function uploadAll(files) {
     fill.style.width = "0";
   }, 2500);
   loadPhotos();
+  loadStorage(true);
 }
 
 function addError(message) {
@@ -197,6 +202,105 @@ function addError(message) {
   item.textContent = message;
   $("#upload-errors").appendChild(item);
 }
+
+/* ----------------------------------------------------------------- storage */
+
+function formatBytes(bytes) {
+  if (!bytes) return "0 KB";
+  // A thumbnail and a whole photo library shouldn't both read "1 MB", so
+  // step down through the units and keep a decimal on small numbers.
+  const units = [
+    [1024 ** 3, "GB"],
+    [1024 ** 2, "MB"],
+    [1024, "KB"],
+  ];
+  for (const [scale, suffix] of units) {
+    if (bytes >= scale) {
+      const value = bytes / scale;
+      return `${value.toFixed(value < 10 ? 1 : 0)} ${suffix}`;
+    }
+  }
+  return `${bytes} B`;
+}
+
+async function loadStorage(refresh) {
+  const host = $("#storage");
+  try {
+    const info = await api(`/api/storage${refresh ? "?refresh=1" : ""}`);
+    host.innerHTML = "";
+    host.appendChild(storageView(info));
+  } catch (err) {
+    host.innerHTML = `<p class="muted small">Storage unavailable: ${err.message}</p>`;
+  }
+}
+
+function storageView(info) {
+  const wrap = document.createElement("div");
+  const used = info.total_bytes - info.free_bytes;
+
+  const headline = document.createElement("p");
+  headline.className = `storage-headline ${info.level}`;
+  headline.textContent =
+    `${formatBytes(info.free_bytes)} free of ${formatBytes(info.total_bytes)}`
+    + (info.level === "ok" ? "" : info.level === "warn" ? " — getting tight" : " — imports paused");
+  wrap.appendChild(headline);
+
+  // One bar: what the frame uses, what else is on the disk, what's free.
+  const bar = document.createElement("div");
+  bar.className = "storage-bar";
+  const segments = [
+    ["photos", info.breakdown.originals, "Photos"],
+    ["thumbs", info.breakdown.thumbnails, "Thumbnails"],
+    ["cache", info.breakdown.cache, "Render cache"],
+    ["rest", Math.max(0, used - info.frame_bytes), "Everything else on the disk"],
+  ];
+  segments.forEach(([kind, bytes, label]) => {
+    if (bytes <= 0 || !info.total_bytes) return;
+    const segment = document.createElement("span");
+    segment.className = `seg ${kind}`;
+    segment.style.width = `${(bytes / info.total_bytes) * 100}%`;
+    segment.title = `${label}: ${formatBytes(bytes)}`;
+    bar.appendChild(segment);
+  });
+  wrap.appendChild(bar);
+
+  const legend = document.createElement("ul");
+  legend.className = "storage-legend";
+  segments.slice(0, 3).forEach(([kind, bytes, label]) => {
+    const item = document.createElement("li");
+    item.innerHTML = `<span class="swatch ${kind}"></span>${label} <b>${formatBytes(bytes)}</b>`;
+    legend.appendChild(item);
+  });
+  wrap.appendChild(legend);
+
+  const detail = document.createElement("p");
+  detail.className = "muted small";
+  detail.textContent =
+    `${info.photo_count} photo(s) using ${formatBytes(info.frame_bytes)} in total`
+    + (info.photo_count ? ` — about ${formatBytes(info.bytes_per_photo)} each.` : ".")
+    + ` Imports stop below ${formatBytes(info.min_free_bytes)} free.`;
+  wrap.appendChild(detail);
+  return wrap;
+}
+
+$("#trim-btn").addEventListener("click", async (event) => {
+  const button = event.target;
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = "Freeing…";
+  try {
+    const result = await api("/api/storage/trim", { method: "POST" });
+    $("#storage").innerHTML = "";
+    $("#storage").appendChild(storageView(result.storage));
+    $("#save-note").textContent =
+      `Freed ${formatBytes(result.freed_bytes)}. Photos will render a little slower until the cache rebuilds.`;
+  } catch (err) {
+    $("#save-note").textContent = err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+});
 
 /* ----------------------------------------------------------------- sources */
 
@@ -506,5 +610,7 @@ $("#locate-btn").addEventListener("click", () => {
 
 loadPhotos();
 loadSources();
+loadStorage();
 pollStatus();
 setInterval(pollStatus, 5000);
+setInterval(() => loadStorage(), 60000);

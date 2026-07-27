@@ -218,6 +218,42 @@ with no display attached and no Pi involved.
 Turn the mirror off, or cap its width to save bandwidth, under *Settings → Web
 mirror*.
 
+## Storage
+
+An SD card fills slowly and then fails badly — half-written syncs, an index
+update interrupted at the worst moment. So the frame watches free space and
+stops before that happens.
+
+The web page shows free space, what the frame itself is using split into
+photos, thumbnails and render cache, and roughly what each photo costs. It's
+measured on a walk of the photo directories, cached for a minute, and
+refreshed whenever photos come or go.
+
+Two thresholds, both under *Settings → Storage*:
+
+| | Default | What happens |
+| --- | --- | --- |
+| Warn below | 1 GB | The status line and the storage panel say so. Nothing stops. |
+| Stop below | 256 MB | No more photos are imported — uploads get a `507`, and network sources pause and report why. |
+
+When space runs short the **render cache goes first**, because every byte of
+it can be rebuilt from the originals; the next few photo changes are slower
+and that's the whole cost. There's a *Free up space* button that does the same
+thing on demand.
+
+Both thresholds are capped at a quarter of the disk, so a floor larger than
+the whole volume can't lock the frame out — on a 64 MB volume a 256 MB floor
+quietly becomes 16 MB. On a normal SD card the settings apply as written.
+
+Space is checked before **every** imported photo, not once per sync, because a
+few hundred photos can fill a card halfway through.
+
+Worth knowing: **a watched folder on the same disk stores each photo twice.**
+The frame copies photos into its own library rather than reading them in
+place, so a locally-sourced photo costs its downscaled original plus a
+thumbnail plus a screen-sized render. Sources on a NAS or in the cloud don't
+have this problem — only local ones, where the file was already on the disk.
+
 ## Settings
 
 All of these are on the web page, and take effect immediately — no restart.
@@ -295,6 +331,8 @@ Handy for scripting — a cron job that posts the photo of the day, say.
 | `POST` | `/api/sources/<id>/sync` | sync one source now |
 | `POST` | `/api/sync` | sync everything now |
 | `GET` | `/api/frame.jpg` | current screen; `?since=<n>` long-polls for the next change |
+| `GET` | `/api/storage` | free space and what the frame is using; `?refresh=1` re-measures |
+| `POST` | `/api/storage/trim` | drop the render cache |
 
 ```bash
 curl -F "photos=@beach.jpg" http://frame.local:8080/api/photos

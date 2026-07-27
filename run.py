@@ -20,6 +20,7 @@ from werkzeug.serving import make_server
 from photoframe.config import Config
 from photoframe.library import HEIF_SUPPORTED, PhotoLibrary
 from photoframe.state import FrameState
+from photoframe.storage import MB, StorageMonitor
 from photoframe.sync import SyncManager
 from photoframe.weather import WeatherService
 from photoframe.web import create_app, local_ip
@@ -58,9 +59,11 @@ def main(argv: list[str] | None = None) -> int:
     weather = WeatherService(config)
     weather.start()
 
+    storage = StorageMonitor(config, library, data_dir)
+
     sync = None
     if not args.no_sync:
-        sync = SyncManager(config, library, data_dir / "sync.json")
+        sync = SyncManager(config, library, data_dir / "sync.json", storage=storage)
         sync.start()
 
     password = os.environ.get("PHOTOFRAME_PASSWORD") or None
@@ -68,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     # the detected address is the container's own, which nobody can reach, so
     # allow it to be overridden.
     url = os.environ.get("PHOTOFRAME_URL") or f"http://{local_ip()}:{args.port}"
-    app = create_app(config, library, state, weather, password=password, sync=sync)
+    app = create_app(config, library, state, weather, password=password,
+                     sync=sync, storage=storage)
 
     try:
         server = make_server(args.host, args.port, app, threaded=True)
@@ -83,6 +87,11 @@ def main(argv: list[str] | None = None) -> int:
     if sync is not None:
         enabled = [s for s in config.section("sources") if s["enabled"]]
         print(f"[frame] {len(enabled)} network source(s) enabled")
+
+    disk = storage.summary()
+    note = "" if disk["level"] == "ok" else f"  ** {disk['level']} **"
+    print(f"[frame] {disk['free_bytes'] // MB} MB free on {data_dir}"
+          f" ({disk['free_percent']}%){note}")
     if not HEIF_SUPPORTED:
         print("[frame] HEIC uploads disabled — pip install pillow-heif to enable")
 

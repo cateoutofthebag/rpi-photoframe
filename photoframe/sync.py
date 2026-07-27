@@ -27,10 +27,11 @@ TICK = 20  # how often to look for sources that are due
 
 
 class SyncManager(threading.Thread):
-    def __init__(self, config, library, state_path: Path):
+    def __init__(self, config, library, state_path: Path, storage=None):
         super().__init__(name="sync", daemon=True)
         self.config = config
         self.library = library
+        self.storage = storage
         self.state_path = Path(state_path)
         self._lock = threading.RLock()
         self._state: dict[str, Any] = self._load()
@@ -172,6 +173,7 @@ class SyncManager(threading.Thread):
         record = self._record(source_id)
         self._active = source_id
         added = 0
+        shortage: str | None = None
         try:
             source = build_source(config)
             items = source.list_items()[: int(config["limit"])]
@@ -183,6 +185,12 @@ class SyncManager(threading.Thread):
                     break
                 if item.key in known:
                     continue
+                # Checked per photo, not once per sync: a long import can fill
+                # the card halfway through.
+                if not self._room_for_more():
+                    shortage = self.storage.describe_shortage()
+                    print(f"[sync] {name}: stopping — {shortage}")
+                    break
                 try:
                     data = source.fetch(item)
                     entry = self.library.add(data, item.filename, origin=source_id)
@@ -193,6 +201,7 @@ class SyncManager(threading.Thread):
                 added += 1
                 time.sleep(DOWNLOAD_PAUSE)
 
+            # Worth doing even if we ran out of room — it frees some.
             removed = 0
             if config["remove_deleted"]:
                 for key in [k for k in known if k not in seen]:
@@ -201,11 +210,13 @@ class SyncManager(threading.Thread):
 
             with self._lock:
                 record["items"] = known
-                record["last_error"] = None
+                record["last_error"] = shortage  # None unless the disk stopped us
                 record["last_added"] = added
                 record["last_run"] = time.time()
             if added or removed:
                 print(f"[sync] {name}: +{added} photo(s), -{removed}")
+                if self.storage is not None:
+                    self.storage.invalidate()  # the numbers have moved
 
         except SourceError as exc:
             self._fail(record, name, str(exc))
@@ -214,6 +225,15 @@ class SyncManager(threading.Thread):
         finally:
             self._active = None
             self._save()
+
+    def _room_for_more(self) -> bool:
+        """Stop importing before the disk is full, dropping the render cache
+        first if that's enough to carry on."""
+        if self.storage is None:
+            return True
+        if not self.config.section("storage")["pause_sync_when_low"]:
+            return True
+        return self.storage.make_room()
 
     def _fail(self, record: dict, name: str, message: str) -> None:
         print(f"[sync] {name}: {message}")

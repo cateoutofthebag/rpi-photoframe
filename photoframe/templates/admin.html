@@ -51,6 +51,16 @@
 
   <section class="card">
     <div class="section-head">
+      <h2>Storage</h2>
+      <button type="button" id="trim-btn" class="ghost small">Free up space</button>
+    </div>
+    <div id="storage">
+      <p class="muted small">Checking…</p>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
       <h2>Network sources</h2>
       <button type="button" id="sync-all-btn" class="ghost small">Sync all now</button>
     </div>
@@ -158,6 +168,28 @@
           <label>From <input type="time" data-path="display.quiet_hours.start" value="{{ config.display.quiet_hours.start }}"></label>
           <label>Until <input type="time" data-path="display.quiet_hours.end" value="{{ config.display.quiet_hours.end }}"></label>
         </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Storage</legend>
+        <label>Warn when free space drops below (MB)
+          <input type="number" min="32" step="64" data-path="storage.warn_free_mb"
+                 value="{{ config.storage.warn_free_mb }}">
+        </label>
+        <label>Stop importing photos below (MB)
+          <input type="number" min="32" step="32" data-path="storage.min_free_mb"
+                 value="{{ config.storage.min_free_mb }}">
+        </label>
+        <label class="check">
+          <input type="checkbox" data-path="storage.pause_sync_when_low"
+                 {{ 'checked' if config.storage.pause_sync_when_low }}>
+          Pause network sources when space runs low
+        </label>
+        <label class="check">
+          <input type="checkbox" data-path="storage.trim_cache_when_low"
+                 {{ 'checked' if config.storage.trim_cache_when_low }}>
+          Drop the render cache first (it rebuilds itself)
+        </label>
       </fieldset>
 
       <fieldset>

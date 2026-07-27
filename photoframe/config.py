@@ -49,6 +49,12 @@ DEFAULTS: dict[str, Any] = {
         "quality": 80,  # JPEG quality for /api/frame.jpg
         "max_width": 0,  # 0 = send at native screen width
     },
+    "storage": {
+        "warn_free_mb": 1024,  # say something
+        "min_free_mb": 256,  # stop importing photos
+        "pause_sync_when_low": True,
+        "trim_cache_when_low": True,
+    },
     # A list, not a dict — see sanitise_sources().
     "sources": [],
 }
@@ -229,6 +235,14 @@ def sanitise(data: dict) -> dict:
     mirror["enabled"] = bool(mirror["enabled"])
     mirror["quality"] = int(_num(mirror["quality"], d["quality"], 30, 95))
     mirror["max_width"] = int(_num(mirror["max_width"], d["max_width"], 0, 4096))
+
+    store, d = out["storage"], DEFAULTS["storage"]
+    store["min_free_mb"] = int(_num(store["min_free_mb"], d["min_free_mb"], 32, 1024 * 1024))
+    store["warn_free_mb"] = int(_num(store["warn_free_mb"], d["warn_free_mb"], 32, 1024 * 1024))
+    # A warning that fires later than the hard stop would never be seen.
+    store["warn_free_mb"] = max(store["warn_free_mb"], store["min_free_mb"])
+    store["pause_sync_when_low"] = bool(store["pause_sync_when_low"])
+    store["trim_cache_when_low"] = bool(store["trim_cache_when_low"])
 
     # Drop any keys that aren't part of the schema.
     result = {section: {k: v for k, v in values.items() if k in DEFAULTS[section]}

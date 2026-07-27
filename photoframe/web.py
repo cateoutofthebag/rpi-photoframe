@@ -70,7 +70,8 @@ def local_ip() -> str:
         sock.close()
 
 
-def create_app(config, library, state, weather, password: str | None = None, sync=None) -> Flask:
+def create_app(config, library, state, weather, password: str | None = None,
+               sync=None, storage=None) -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.config["JSON_SORT_KEYS"] = False
@@ -115,7 +116,23 @@ def create_app(config, library, state, weather, password: str | None = None, syn
         status = state.status()
         status["photo_count"] = len(library)
         status["weather"] = weather.current
+        # Only the cheap figures here — this is polled every few seconds.
+        status["storage"] = storage.summary() if storage else None
         return jsonify(status)
+
+    @app.get("/api/storage")
+    def api_storage():
+        if storage is None:
+            return jsonify(error="Storage monitoring is not enabled"), 503
+        return jsonify(storage.snapshot(refresh=request.args.get("refresh") == "1"))
+
+    @app.post("/api/storage/trim")
+    def api_storage_trim():
+        """Drop the render cache. Everything in it rebuilds on demand."""
+        if storage is None:
+            return jsonify(error="Storage monitoring is not enabled"), 503
+        freed = storage.trim_cache()
+        return jsonify(ok=True, freed_bytes=freed, storage=storage.snapshot(refresh=True))
 
     @app.get("/api/photos")
     def api_photos():
@@ -127,6 +144,10 @@ def create_app(config, library, state, weather, password: str | None = None, syn
         if not uploads:
             return jsonify(error="No files in request"), 400
 
+        # Refuse rather than half-write the index onto a full card.
+        if storage is not None and not storage.make_room():
+            return jsonify(error=storage.describe_shortage(), added=[], errors=[]), 507
+
         added, errors = [], []
         for upload in uploads:
             try:
@@ -136,6 +157,8 @@ def create_app(config, library, state, weather, password: str | None = None, syn
             except Exception as exc:  # noqa: BLE001 - never 500 on one bad file
                 errors.append({"filename": upload.filename, "error": f"unexpected: {exc}"})
 
+        if added and storage is not None:
+            storage.invalidate()
         status = 200 if added else 400
         return jsonify(added=added, errors=errors, count=len(library)), status
 
@@ -143,6 +166,8 @@ def create_app(config, library, state, weather, password: str | None = None, syn
     def api_delete(photo_id: str):
         if not library.delete(photo_id):
             return jsonify(error="No such photo"), 404
+        if storage is not None:
+            storage.invalidate()
         return jsonify(ok=True, count=len(library))
 
     @app.get("/thumbs/<photo_id>.jpg")
