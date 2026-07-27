@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161a">
+  <title>Photo Frame</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+</head>
+<body>
+<header class="bar">
+  <div class="bar-row">
+    <h1>Photo Frame</h1>
+    <a class="mirror-link" href="/mirror" target="_blank" rel="noopener">Open mirror ↗</a>
+  </div>
+  <p id="status" class="status">Connecting…</p>
+</header>
+
+<main>
+  <section class="card">
+    <div class="controls">
+      <button type="button" data-action="previous" title="Previous photo">‹ Prev</button>
+      <button type="button" data-action="toggle_pause" id="pause-btn">Pause</button>
+      <button type="button" data-action="next" title="Next photo">Next ›</button>
+      <button type="button" data-action="info_burst" class="ghost">Show info 10 min</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Add photos</h2>
+    <label id="dropzone" class="dropzone" for="file-input">
+      <strong>Drop photos here</strong>
+      <span>or tap to choose from this device</span>
+      <small>{{ extensions | join(' ') }}</small>
+      <input id="file-input" type="file" multiple accept="image/*" hidden>
+    </label>
+    <div id="upload-progress" class="progress" hidden>
+      <div class="progress-bar"><span id="progress-fill"></span></div>
+      <p id="progress-label"></p>
+    </div>
+    <ul id="upload-errors" class="errors"></ul>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Photos <span id="photo-count" class="pill">{{ photo_count }}</span></h2>
+      <button type="button" id="refresh-btn" class="ghost small">Refresh</button>
+    </div>
+    <div id="grid" class="grid"><p class="muted">Loading…</p></div>
+  </section>
+
+  <section class="card">
+    <div class="section-head">
+      <h2>Network sources</h2>
+      <button type="button" id="sync-all-btn" class="ghost small">Sync all now</button>
+    </div>
+    <p class="muted small">
+      Photos are copied to the frame and kept in step: remove one upstream and it
+      goes here too. Changes are applied when you press <em>Save settings</em>.
+    </p>
+    <div id="sources"></div>
+    <div class="add-source">
+      <select id="source-type" aria-label="Source type">
+        <option value="folder">Watched folder</option>
+        <option value="smb">SMB / network share</option>
+        <option value="photoprism">PhotoPrism album</option>
+        <option value="icloud">iCloud shared album</option>
+      </select>
+      <button type="button" id="add-source-btn" class="ghost">Add source</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Settings</h2>
+    <form id="settings">
+      <fieldset>
+        <legend>Slideshow</legend>
+        <label>Seconds per photo
+          <input type="number" min="5" max="86400" data-path="slideshow.interval_seconds"
+                 value="{{ config.slideshow.interval_seconds }}">
+        </label>
+        <label>Crossfade (seconds)
+          <input type="number" min="0" max="5" step="0.1" data-path="slideshow.transition_seconds"
+                 value="{{ config.slideshow.transition_seconds }}">
+        </label>
+        <label>Fill mode
+          <select data-path="slideshow.fit">
+            {% for value, text in [('blur', 'Blurred edges'), ('contain', 'Fit, black bars'), ('cover', 'Fill, crop edges')] %}
+            <option value="{{ value }}" {{ 'selected' if config.slideshow.fit == value }}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" data-path="slideshow.shuffle" {{ 'checked' if config.slideshow.shuffle }}>
+          Shuffle order
+        </label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Information overlay</legend>
+        <label>When to show
+          <select data-path="overlay.mode">
+            {% for value, text in [('scheduled', 'On a schedule'), ('always', 'Always'), ('off', 'Never')] %}
+            <option value="{{ value }}" {{ 'selected' if config.overlay.mode == value }}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="row">
+          <label>From <input type="time" data-path="overlay.start" value="{{ config.overlay.start }}"></label>
+          <label>Until <input type="time" data-path="overlay.end" value="{{ config.overlay.end }}"></label>
+        </div>
+        <label>Corner
+          <select data-path="overlay.corner">
+            {% for value, text in [('bottom-left', 'Bottom left'), ('bottom-right', 'Bottom right'), ('top-left', 'Top left'), ('top-right', 'Top right')] %}
+            <option value="{{ value }}" {{ 'selected' if config.overlay.corner == value }}>{{ text }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Size
+          <input type="number" min="0.5" max="2.5" step="0.05" data-path="overlay.scale" value="{{ config.overlay.scale }}">
+        </label>
+        <label class="check"><input type="checkbox" data-path="overlay.clock" {{ 'checked' if config.overlay.clock }}> Clock</label>
+        <label class="check"><input type="checkbox" data-path="overlay.clock_24h" {{ 'checked' if config.overlay.clock_24h }}> 24-hour clock</label>
+        <label class="check"><input type="checkbox" data-path="overlay.date" {{ 'checked' if config.overlay.date }}> Date</label>
+        <label class="check"><input type="checkbox" data-path="overlay.weather" {{ 'checked' if config.overlay.weather }}> Weather</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Weather</legend>
+        <div class="row">
+          <label>Latitude <input type="number" step="0.0001" min="-90" max="90" data-path="weather.latitude" value="{{ config.weather.latitude }}"></label>
+          <label>Longitude <input type="number" step="0.0001" min="-180" max="180" data-path="weather.longitude" value="{{ config.weather.longitude }}"></label>
+        </div>
+        <button type="button" id="locate-btn" class="ghost small">Use this device's location</button>
+        <label>Units
+          <select data-path="weather.units">
+            <option value="metric" {{ 'selected' if config.weather.units == 'metric' }}>Celsius</option>
+            <option value="imperial" {{ 'selected' if config.weather.units == 'imperial' }}>Fahrenheit</option>
+          </select>
+        </label>
+        <p class="muted small">Forecast from Open-Meteo. No account or API key needed.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>Screen</legend>
+        <label>Rotation
+          <select data-path="display.rotation">
+            {% for value in [0, 90, 180, 270] %}
+            <option value="{{ value }}" {{ 'selected' if config.display.rotation == value }}>{{ value }}°</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" data-path="display.quiet_hours.enabled" {{ 'checked' if config.display.quiet_hours.enabled }}>
+          Turn the screen off overnight
+        </label>
+        <div class="row">
+          <label>From <input type="time" data-path="display.quiet_hours.start" value="{{ config.display.quiet_hours.start }}"></label>
+          <label>Until <input type="time" data-path="display.quiet_hours.end" value="{{ config.display.quiet_hours.end }}"></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Web mirror</legend>
+        <label class="check">
+          <input type="checkbox" data-path="mirror.enabled" {{ 'checked' if config.mirror.enabled }}>
+          Serve a live copy of the screen at <code>/mirror</code>
+        </label>
+        <label>JPEG quality
+          <input type="number" min="30" max="95" data-path="mirror.quality" value="{{ config.mirror.quality }}">
+        </label>
+        <label>Maximum width (0 = same as the screen)
+          <input type="number" min="0" max="4096" step="16" data-path="mirror.max_width" value="{{ config.mirror.max_width }}">
+        </label>
+      </fieldset>
+
+      <div class="save-row">
+        <button type="submit" id="save-btn">Save settings</button>
+        <span id="save-note" class="muted small"></span>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='admin.js') }}"></script>
+</body>
+</html>

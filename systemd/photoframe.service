@@ -1,0 +1,28 @@
+[Unit]
+Description=Raspberry Pi photo frame
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+# KMSDRM needs access to the GPU and input devices.
+SupplementaryGroups=video render input tty
+
+WorkingDirectory=/home/pi/rpi-photoframe
+Environment=PHOTOFRAME_DATA=/home/pi/rpi-photoframe/data
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=PYTHONUNBUFFERED=1
+# Uncomment to require a password on the web UI (any username):
+# Environment=PHOTOFRAME_PASSWORD=changeme
+
+ExecStart=/home/pi/rpi-photoframe/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+
+# The Pi's clock can be wrong until NTP lands; don't spam the log on restart.
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

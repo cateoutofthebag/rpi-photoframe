@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Photo Frame — Mirror</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    /* Our own display rules below would otherwise beat the browser's
+       [hidden] { display: none }, leaving hidden elements on screen. */
+    [hidden] { display: none !important; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #fff;
+    }
+
+    /* Idle for a few seconds and the page becomes just the picture — this is
+       meant to be usable as an actual second display, not only a debug view. */
+    body.idle { cursor: none; }
+    body.idle .chrome { opacity: 0; pointer-events: none; }
+
+    #frame {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      background: #000;
+    }
+
+    body.fill #frame { object-fit: cover; }
+
+    .chrome {
+      position: fixed;
+      transition: opacity 0.4s;
+      z-index: 2;
+    }
+
+    .status {
+      top: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      background: linear-gradient(to bottom, rgba(0, 0, 0, 0.75), transparent);
+      font-size: 0.85rem;
+    }
+
+    .status a { color: #6aa9ff; }
+    .dot { color: #7bd88f; }
+    .dot.stale { color: #ffb86b; }
+    .dot.down { color: #ff6b6b; }
+
+    .controls {
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(18, 20, 24, 0.85);
+      border: 1px solid #2c313b;
+      border-radius: 999px;
+      backdrop-filter: blur(8px);
+    }
+
+    button {
+      font: inherit;
+      font-size: 0.85rem;
+      color: #e8eaed;
+      background: transparent;
+      border: 0;
+      border-radius: 999px;
+      padding: 8px 14px;
+      cursor: pointer;
+      min-height: 40px;
+    }
+
+    button:hover { background: #2c313b; }
+
+    .empty {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 24px;
+      color: #9aa3b0;
+    }
+  </style>
+</head>
+<body>
+  <img id="frame" alt="Live view of the photo frame" hidden>
+  <p id="empty" class="empty">Waiting for the frame…</p>
+
+  <div class="status chrome">
+    <span><span id="dot" class="dot">●</span> <span id="state">connecting…</span></span>
+    <a href="/">Settings</a>
+  </div>
+
+  <div class="controls chrome">
+    <button type="button" data-action="previous">‹ Prev</button>
+    <button type="button" data-action="toggle_pause" id="pause-btn">Pause</button>
+    <button type="button" data-action="next">Next ›</button>
+    <button type="button" data-action="info_burst">Info</button>
+    <button type="button" id="fit-btn">Fill</button>
+    <button type="button" id="full-btn">Fullscreen</button>
+  </div>
+
+  <script src="{{ url_for('static', filename='mirror.js') }}"></script>
+</body>
+</html>

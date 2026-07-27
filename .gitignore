@@ -1,0 +1,13 @@
+# Photos, thumbnails, render cache and runtime settings
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# macOS
+.DS_Store

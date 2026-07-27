@@ -1,0 +1,13 @@
+Flask>=3.0,<4
+Pillow>=10.0
+pygame>=2.1
+requests>=2.31
+
+# Optional: SMB/CIFS network shares. Pure Python, so it installs quickly even
+# on a Zero 2 W. Only needed if you add an SMB source.
+# smbprotocol>=1.12
+
+# Optional: HEIC/HEIF support for photos straight off an iPhone.
+# There are no piwheels builds for this on a Zero 2 W, so it compiles from
+# source (slow, and needs libheif-dev). Uncomment only if you want it.
+# pillow-heif>=0.16
