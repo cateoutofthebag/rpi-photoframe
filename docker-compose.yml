@@ -1,0 +1,37 @@
+# Test rig for the photo frame. Once it's up:
+#
+#   http://localhost:8080/         upload photos, change settings
+#   http://localhost:8080/mirror   watch the frame itself
+#
+#   docker compose up -d --build
+#   docker compose logs -f
+#
+# The Pi runs this from systemd instead — see systemd/photoframe.service.
+
+services:
+  photoframe:
+    build: .
+    image: rpi-photoframe:test
+    container_name: photoframe
+    restart: unless-stopped
+    ports:
+      - "${PHOTOFRAME_PORT:-8080}:8080"
+    environment:
+      # The clock overlay follows this, so set it to your own zone.
+      TZ: "${TZ:-Europe/London}"
+      # Uncomment to require a password on the web UI (any username):
+      # PHOTOFRAME_PASSWORD: "changeme"
+    volumes:
+      # Photos, settings and the render cache. A named volume keeps this
+      # working the same on macOS, Windows and Linux — swap it for a bind
+      # mount (./data:/data) if you'd rather poke at the files, and on Linux
+      # chown that directory to uid 1000 first.
+      - photoframe-data:/data
+
+      # Anything you drop in ./photos can be imported by adding a "Watched
+      # folder" source pointing at /photos — a quick way to try the sync
+      # machinery without a NAS.
+      - ./photos:/photos:ro
+
+volumes:
+  photoframe-data:

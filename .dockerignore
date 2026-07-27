@@ -1,0 +1,14 @@
+.git/
+.gitignore
+.venv/
+venv/
+data/
+tests/
+systemd/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+README.md
+Dockerfile
+docker-compose.yml
