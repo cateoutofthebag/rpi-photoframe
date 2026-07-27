@@ -14,6 +14,10 @@ services:
     image: rpi-photoframe:test
     container_name: photoframe
     restart: unless-stopped
+    labels:
+      # This image is built locally and isn't in any registry, so keep
+      # Watchtower (if you run it) from trying to update it.
+      com.centurylinklabs.watchtower.enable: "false"
     ports:
       - "${PHOTOFRAME_PORT:-8080}:8080"
     environment:
