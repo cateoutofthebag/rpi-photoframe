@@ -36,6 +36,8 @@ async function pollStatus() {
     label.textContent = describeStatus(status);
     label.classList.remove("offline");
     $("#pause-btn").textContent = status.paused ? "Play" : "Pause";
+    // Say what pressing it will do — the overlay is often already up.
+    $("#info-btn").textContent = status.overlay_visible ? "Hide info" : "Show info";
     $("#photo-count").textContent = status.photo_count;
   } catch (err) {
     label.textContent = `Frame unreachable — ${err.message}`;

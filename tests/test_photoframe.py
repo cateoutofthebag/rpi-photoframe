@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import os
+import time
 from datetime import datetime
 
 import pytest
@@ -364,3 +365,97 @@ def test_image_loader_flags_missing_photos(library):
         assert loader.take(("does-not-exist", (320, 240), "contain", 0), timeout=10) is FAILED
     finally:
         loader.stop()
+
+
+# ------------------------------------------------------------- info override
+
+
+@pytest.fixture
+def frame(tmp_path):
+    """A FrameDisplay wired up enough to exercise the overlay logic."""
+    import photoframe.display as display_module
+    from photoframe.config import Config
+
+    config = Config(tmp_path / "config.json")
+    library = PhotoLibrary(tmp_path)
+    state = FrameState()
+
+    display = display_module.FrameDisplay.__new__(display_module.FrameDisplay)
+    display.config, display.library, display.state = config, library, state
+    display.weather = FakeWeather()
+    display._cfg = config.snapshot()
+    return display, config, state
+
+
+def test_info_shows_the_overlay_when_the_schedule_says_no(frame):
+    display, config, _ = frame
+    config.update({"overlay": {"mode": "off"}})
+    display._cfg = config.snapshot()
+    assert display._overlay_visible(datetime.now()) is False
+
+    display._show_info(True)
+
+    assert display._overlay_visible(datetime.now()) is True
+
+
+def test_info_hides_the_overlay_when_the_schedule_says_yes(frame):
+    """The reported bug: with the overlay already up, the button had no
+    effect at all and there was no way to turn it off."""
+    display, config, _ = frame
+    config.update({"overlay": {"mode": "always"}})
+    display._cfg = config.snapshot()
+    assert display._overlay_visible(datetime.now()) is True
+
+    display._show_info(False)
+
+    assert display._overlay_visible(datetime.now()) is False
+
+
+def test_the_info_override_expires(frame):
+    import photoframe.display as display_module
+
+    display, config, state = frame
+    config.update({"overlay": {"mode": "off"}})
+    display._cfg = config.snapshot()
+
+    display._show_info(True)
+    assert display._overlay_visible(datetime.now()) is True
+
+    state.info_burst_until = time.time() - 1  # as if the ten minutes elapsed
+    assert display._overlay_visible(datetime.now()) is False
+    assert display_module.INFO_OVERRIDE_SECONDS == 600
+
+
+@pytest.mark.parametrize("mode,starts_visible", [("always", True), ("off", False)])
+def test_toggle_info_flips_whichever_way_it_is(frame, mode, starts_visible):
+    display, config, _ = frame
+    config.update({"overlay": {"mode": mode}})
+    display._cfg = config.snapshot()
+    assert display._overlay_visible(datetime.now()) is starts_visible
+
+    for expected in (not starts_visible, starts_visible, not starts_visible):
+        display.state.send("toggle_info")
+        display._handle_commands()
+        assert display._overlay_visible(datetime.now()) is expected
+
+
+def test_showing_and_hiding_cancel_each_other(frame):
+    display, config, state = frame
+    config.update({"overlay": {"mode": "off"}})
+    display._cfg = config.snapshot()
+
+    display._show_info(True)
+    display._show_info(False)
+    assert state.info_burst_until == 0.0   # not left pending behind the mute
+    assert display._overlay_visible(datetime.now()) is False
+
+    display._show_info(True)
+    assert state.info_mute_until == 0.0
+    assert display._overlay_visible(datetime.now()) is True
+
+
+def test_the_control_api_accepts_the_new_actions(client):
+    http, _, _, state, _ = client
+    for action in ("info_burst", "info_hide", "toggle_info"):
+        assert http.post("/api/control", json={"action": action}).status_code == 200
+    assert state.drain() == ["info_burst", "info_hide", "toggle_info"]

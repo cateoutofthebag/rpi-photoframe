@@ -33,6 +33,9 @@ _tobytes = getattr(pygame.image, "tobytes", None) or pygame.image.tostring
 
 FAILED = object()  # sentinel: this photo could not be rendered
 
+# How long the info button's override of the overlay schedule lasts.
+INFO_OVERRIDE_SECONDS = 600
+
 
 class ImageLoader(threading.Thread):
     """Renders photos to pygame surfaces off the main thread."""
@@ -241,7 +244,7 @@ class FrameDisplay:
                     self.paused = not self.paused
                     self.state.update(paused=self.paused)
                 elif event.key == pygame.K_i:
-                    self.state.info_burst_until = time.time() + 600
+                    self._show_info(not self._overlay_visible(datetime.now()))
 
     def _handle_commands(self) -> None:
         for command in self.state.drain():
@@ -257,7 +260,11 @@ class FrameDisplay:
             elif command == "reload":
                 self._library_version = -1  # forces a playlist rebuild
             elif command == "info_burst":
-                self.state.info_burst_until = time.time() + 600
+                self._show_info(True)
+            elif command == "info_hide":
+                self._show_info(False)
+            elif command == "toggle_info":
+                self._show_info(not self._overlay_visible(datetime.now()))
 
     def _sync_playlist(self) -> None:
         if self.library.version == self._library_version:
@@ -383,9 +390,20 @@ class FrameDisplay:
 
     # --------------------------------------------------------------- overlay
 
+    def _show_info(self, visible: bool) -> None:
+        """Override the overlay schedule for a while, in either direction."""
+        deadline = time.time() + INFO_OVERRIDE_SECONDS
+        if visible:
+            self.state.info_burst_until, self.state.info_mute_until = deadline, 0.0
+        else:
+            self.state.info_mute_until, self.state.info_burst_until = deadline, 0.0
+
     def _overlay_visible(self, now: datetime) -> bool:
         settings = self._cfg["overlay"]
-        if time.time() < self.state.info_burst_until:
+        clock = time.time()
+        if clock < self.state.info_mute_until:
+            return False
+        if clock < self.state.info_burst_until:
             return True
         mode = settings["mode"]
         if mode == "always":

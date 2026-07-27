@@ -84,9 +84,20 @@ document.querySelectorAll("[data-action]").forEach((button) => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: button.dataset.action }),
       });
+      setTimeout(refreshControls, 400);  // relabel once the frame has acted
     } catch { /* the status line will show the connection is unhappy */ }
   });
 });
+
+/* Label the buttons with what they'll do next, not what they're called. */
+async function refreshControls() {
+  try {
+    const status = await (await fetch("/api/status", { cache: "no-store" })).json();
+    document.getElementById("pause-btn").textContent = status.paused ? "Play" : "Pause";
+    document.getElementById("info-btn").textContent =
+      status.overlay_visible ? "Hide info" : "Show info";
+  } catch { /* ignore */ }
+}
 
 document.getElementById("fit-btn").addEventListener("click", (event) => {
   document.body.classList.toggle("fill");
@@ -110,12 +121,6 @@ function wake() {
 );
 wake();
 
-/* Keep the pause button honest, cheaply. */
-setInterval(async () => {
-  try {
-    const status = await (await fetch("/api/status")).json();
-    document.getElementById("pause-btn").textContent = status.paused ? "Play" : "Pause";
-  } catch { /* ignore */ }
-}, 5000);
-
+refreshControls();
+setInterval(refreshControls, 5000);
 pump();

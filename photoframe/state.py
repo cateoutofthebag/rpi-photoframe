@@ -11,7 +11,11 @@ import time
 from collections import deque
 from typing import Any
 
-COMMANDS = {"next", "previous", "pause", "resume", "toggle_pause", "reload", "info_burst"}
+COMMANDS = {
+    "next", "previous", "pause", "resume", "toggle_pause", "reload",
+    # Temporary overrides of the overlay schedule, in both directions.
+    "info_burst", "info_hide", "toggle_info",
+}
 
 
 MIRROR_DEMAND_SECONDS = 30  # how long one viewer request keeps frames flowing
@@ -32,8 +36,11 @@ class FrameState:
             "screen": None,
             "started_at": time.time(),
         }
-        # Set by the web UI's "show info" button; overrides the schedule until then.
+        # The info button overrides the overlay schedule for a while, either
+        # way round: show it when the schedule says no, hide it when the
+        # schedule says yes. Muting wins over showing.
         self.info_burst_until: float = 0.0
+        self.info_mute_until: float = 0.0
 
         # Latest composed frame for the web mirror, as raw RGB. Only produced
         # while someone is actually watching — see mirror_active().
