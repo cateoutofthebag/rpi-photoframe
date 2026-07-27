@@ -64,7 +64,10 @@ def main(argv: list[str] | None = None) -> int:
         sync.start()
 
     password = os.environ.get("PHOTOFRAME_PASSWORD") or None
-    url = f"http://{local_ip()}:{args.port}"
+    # Shown in the log and on the "no photos yet" screen. Inside a container
+    # the detected address is the container's own, which nobody can reach, so
+    # allow it to be overridden.
+    url = os.environ.get("PHOTOFRAME_URL") or f"http://{local_ip()}:{args.port}"
     app = create_app(config, library, state, weather, password=password, sync=sync)
 
     try:

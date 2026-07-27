@@ -23,6 +23,10 @@ services:
     environment:
       # The clock overlay follows this, so set it to your own zone.
       TZ: "${TZ:-Europe/London}"
+      # The address the frame tells people to visit, shown on the "no photos
+      # yet" screen. Without this it would advertise its own container IP,
+      # which nothing outside Docker can reach.
+      PHOTOFRAME_URL: "${PHOTOFRAME_URL:-http://localhost:8080}"
       # Uncomment to require a password on the web UI (any username):
       # PHOTOFRAME_PASSWORD: "changeme"
     volumes:

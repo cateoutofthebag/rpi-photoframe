@@ -85,6 +85,37 @@ sudo apt install -y libheif-dev && .venv/bin/pip install pillow-heif
 If you'd rather not, set your iPhone to *Settings → Camera → Formats → Most
 Compatible* and it'll send JPEGs.
 
+## Try it in Docker first
+
+Handy before the Pi exists, or for developing on a laptop. There's no
+framebuffer in a container, so it runs the display loop against SDL's dummy
+driver — the slideshow, transitions, overlay, quiet hours and source syncing
+all behave exactly as they will on the Pi, and you watch it at `/mirror`
+instead of on an HDMI panel.
+
+```bash
+docker compose up -d --build
+```
+
+Then open `http://localhost:8080/` to add photos and `http://localhost:8080/mirror`
+to watch the frame. Set `PHOTOFRAME_URL` in `docker-compose.yml` if you're
+reaching it from another machine.
+
+Anything you drop in `./photos` can be imported by adding a *Watched folder*
+source pointing at `/photos` — the quickest way to exercise the sync machinery
+without a NAS.
+
+Photos and settings live in a named volume, so `docker compose down` keeps
+them; `docker compose down -v` starts over.
+
+The image is Python 3.11 on Debian Bookworm, matching Raspberry Pi OS, with
+DejaVu fonts so the overlay renders exactly as it will on the frame. Every
+dependency has a prebuilt wheel on both amd64 and arm64, so no compiler is
+needed and the build takes about a minute.
+
+This is a functional stand-in, not a performance one: a container on a desktop
+tells you nothing about how a Zero 2 W will cope.
+
 ## Run it as a service
 
 ```bash
