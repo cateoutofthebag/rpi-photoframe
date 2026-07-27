@@ -93,21 +93,30 @@ class SyncManager(threading.Thread):
             })
         return rows
 
-    def sync_now(self, source_id: str | None = None) -> None:
-        """Run one or all sources at the next tick."""
+    def sync_now(self, source_id: str | None = None) -> bool:
+        """Run one or all sources at the next tick.
+
+        False means there's no such source — usually a source added in the
+        browser but not saved yet. Unknown ids are rejected rather than
+        queued, since nothing would ever pick them up.
+        """
+        known = {source["id"] for source in self.config.section("sources")}
         with self._lock:
-            if source_id:
+            if source_id is not None:
+                if source_id not in known:
+                    return False
                 self._forced.add(source_id)
             else:
-                self._forced.update(s["id"] for s in self.config.section("sources"))
+                self._forced.update(known)
         self._wake.set()
+        return True
 
     def check(self, source_id: str) -> str:
         """Test a source's settings without importing anything."""
         for source in self.config.section("sources"):
             if source["id"] == source_id:
                 return build_source(source).check()
-        raise SourceError("No such source")
+        raise SourceError("No such source — press Save settings first")
 
     def forget(self, source_id: str) -> None:
         """Drop a removed source's photos and its sync record."""

@@ -65,8 +65,6 @@ class PhotoPrismSource(PhotoSource):
                 )
             except requests.RequestException as exc:
                 raise SourceError(f"Could not reach {base}: {exc}") from exc
-            if response.status_code in (401, 403):
-                raise SourceError("PhotoPrism rejected those credentials")
             self._raise_for_status(response, "sign in")
 
             data = self._json(response)
@@ -98,6 +96,11 @@ class PhotoPrismSource(PhotoSource):
     # ------------------------------------------------------------- requests
 
     def _raise_for_status(self, response: requests.Response, what: str) -> None:
+        # A 401 anywhere means the credentials didn't work, whichever request
+        # happened to hit it — say that rather than quoting a status code.
+        if response.status_code in (401, 403):
+            credential = "app password" if (self.config.get("token") or "").strip() else "username and password"
+            raise SourceError(f"PhotoPrism rejected that {credential}")
         if response.status_code >= 400:
             raise SourceError(f"PhotoPrism returned HTTP {response.status_code} trying to {what}")
 
@@ -105,7 +108,11 @@ class PhotoPrismSource(PhotoSource):
         try:
             return response.json()
         except ValueError as exc:
-            raise SourceError("PhotoPrism returned a response that wasn't JSON") from exc
+            # Something answered, but not with JSON — almost always a URL
+            # pointing at a different server, or a reverse proxy's error page.
+            raise SourceError(
+                f"{self._base()} doesn't look like a PhotoPrism server — check the URL"
+            ) from exc
 
     def _get_json(self, url: str, params: dict | None = None) -> Any:
         try:

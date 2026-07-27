@@ -406,7 +406,7 @@ function sourceCard(source, index) {
 
   const actions = document.createElement("div");
   actions.className = "controls";
-  actions.appendChild(sourceButton("Test", "ghost small", () => testSource(source.id, statusLine)));
+  actions.appendChild(sourceButton("Test", "ghost small", () => testSource(source.id, statusLine, card)));
   actions.appendChild(sourceButton("Sync now", "ghost small", () => syncSource(source.id, statusLine)));
   actions.appendChild(sourceButton("Remove", "ghost small danger", () => {
     if (!confirm(`Remove "${source.name}"? Its photos will be deleted from the frame when you save.`)) return;
@@ -460,21 +460,28 @@ function sourceField(field, source) {
   return label;
 }
 
-function collectSources() {
-  return [...document.querySelectorAll("#sources .source")].map((card) => {
-    const source = { ...sources[Number(card.dataset.index)] };
-    card.querySelectorAll("[data-key]").forEach((input) => {
-      source[input.dataset.key] = readValue(input);
-    });
-    return source;
+function collectSource(card) {
+  const source = { ...sources[Number(card.dataset.index)] };
+  card.querySelectorAll("[data-key]").forEach((input) => {
+    source[input.dataset.key] = readValue(input);
   });
+  return source;
 }
 
-async function testSource(id, line) {
+function collectSources() {
+  return [...document.querySelectorAll("#sources .source")].map((card) => collectSource(card));
+}
+
+async function testSource(id, line, card) {
   line.textContent = "Testing…";
   line.className = "source-status muted small";
   try {
-    const result = await api(`/api/sources/${id}/test`, { method: "POST" });
+    // Send what's on screen, so a source can be tested before it's saved.
+    const result = await api(`/api/sources/${id}/test`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(collectSource(card)),
+    });
     line.textContent = result.message;
     line.className = `source-status small ${result.ok ? "ok" : "bad"}`;
   } catch (err) {

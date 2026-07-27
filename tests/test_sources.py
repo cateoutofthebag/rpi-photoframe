@@ -221,6 +221,113 @@ def test_smb_needs_a_server_and_share():
         source.list_items()
 
 
+# ----------------------------------------------------- testing before saving
+
+
+@pytest.fixture
+def sourced_client(tmp_path, monkeypatch):
+    """A client whose sources can be tested, with a stubbed source builder."""
+    import photoframe.web as web_module
+
+    config = Config(tmp_path / "config.json")
+    library = PhotoLibrary(tmp_path)
+    manager = SyncManager(config, library, tmp_path / "sync.json")
+
+    seen: dict = {}
+
+    class Probe:
+        def __init__(self, cfg):
+            seen.clear()
+            seen.update(cfg)
+
+        def check(self):
+            return f"Connected to {seen.get('url') or seen.get('path')}"
+
+    monkeypatch.setattr(web_module, "build_source", lambda cfg: Probe(cfg))
+    app = create_app(config, library, FrameState(), FakeWeather(), sync=manager)
+    app.config.update(TESTING=True)
+    return app.test_client(), config, seen
+
+
+def test_an_unsaved_source_can_still_be_tested(sourced_client):
+    """The regression: a source added in the browser isn't on the server yet,
+    so testing by id alone could only ever say 'No such source'."""
+    http, config, seen = sourced_client
+    assert config.section("sources") == []  # nothing saved
+
+    response = http.post("/api/sources/new-abc123/test", json={
+        "id": "new-abc123", "type": "photoprism", "name": "PhotoFrame",
+        "url": "https://photoprism.example.com", "album": "PhotoFrame", "token": "secret",
+    })
+    body = response.get_json()
+    assert body["ok"] is True
+    assert "photoprism.example.com" in body["message"]
+    assert seen["token"] == "secret"       # the typed-in values were used
+    assert config.section("sources") == []  # and nothing was saved as a side effect
+
+
+def test_testing_an_edited_source_keeps_the_stored_password(sourced_client):
+    http, config, seen = sourced_client
+    config.update({"sources": [{
+        "type": "photoprism", "id": "pp1", "name": "PP",
+        "url": "https://pp.example.com", "album": "A", "token": "stored-secret",
+    }]})
+
+    # The browser echoes the placeholder back, never the real credential.
+    http.post("/api/sources/pp1/test", json={
+        "id": "pp1", "type": "photoprism", "name": "PP",
+        "url": "https://pp.example.com", "album": "B", "token": SECRET_PLACEHOLDER,
+    })
+    assert seen["token"] == "stored-secret"
+    assert seen["album"] == "B"  # the edit under test is honoured
+
+
+def test_testing_without_a_body_falls_back_to_stored_settings(sourced_client, tmp_path):
+    """No body means "test what's saved" — the path an API caller takes."""
+    http, config, _ = sourced_client
+    folder = tmp_path / "stored"
+    folder.mkdir()
+    (folder / "a.jpg").write_bytes(make_image())
+    config.update({"sources": [{"type": "folder", "id": "f1", "name": "F", "path": str(folder)}]})
+
+    body = http.post("/api/sources/f1/test").get_json()
+
+    assert body["ok"] is True
+    assert "1 photo" in body["message"]
+
+
+def test_testing_an_unknown_id_without_a_body_explains_itself(sourced_client):
+    http, _, _ = sourced_client
+    body = http.post("/api/sources/nope/test").get_json()
+    assert body["ok"] is False
+    assert "Save settings" in body["message"]
+
+
+def test_syncing_an_unsaved_source_is_rejected(sourced_client):
+    """Unlike Test, this writes to the library, so it needs a saved source —
+    and an unknown id must not sit in the queue forever."""
+    http, _, _ = sourced_client
+    response = http.post("/api/sources/new-abc123/sync")
+    assert response.status_code == 404
+    assert "Save settings" in response.get_json()["error"]
+
+
+def test_photoprism_401_names_the_credential():
+    from photoframe.sources.photoprism import PhotoPrismSource
+
+    class Response:
+        status_code = 401
+
+    source = PhotoPrismSource({"id": "p", "type": "photoprism", "name": "P", "token": "abc"})
+    with pytest.raises(SourceError, match="rejected that app password"):
+        source._raise_for_status(Response(), "read data")
+
+    source = PhotoPrismSource({"id": "p", "type": "photoprism", "name": "P",
+                               "username": "u", "password": "p", "token": ""})
+    with pytest.raises(SourceError, match="rejected that username and password"):
+        source._raise_for_status(Response(), "read data")
+
+
 # ------------------------------------------------------------ icloud helper
 
 

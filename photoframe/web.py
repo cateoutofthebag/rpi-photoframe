@@ -14,9 +14,9 @@ from typing import Any
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from PIL import Image
 
-from .config import SECRET_FIELDS, SOURCE_FIELDS
+from .config import SECRET_FIELDS, SOURCE_FIELDS, sanitise_sources
 from .library import SUPPORTED_EXTENSIONS, LibraryError
-from .sources import SourceError
+from .sources import SourceError, build_source
 from .state import COMMANDS
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -207,10 +207,29 @@ def create_app(config, library, state, weather, password: str | None = None,
 
     @app.post("/api/sources/<source_id>/test")
     def api_source_test(source_id: str):
+        """Check a source's settings.
+
+        The body may carry the settings to test, which is how the web page
+        tests a source you haven't saved yet — otherwise there'd be nothing
+        on the server to test and you'd have to save blind. With no body, the
+        stored settings are used.
+        """
         if sync is None:
             return jsonify(error="Syncing is not enabled"), 503
+
+        payload = request.get_json(silent=True)
         try:
-            return jsonify(ok=True, message=sync.check(source_id))
+            if isinstance(payload, dict) and payload.get("type"):
+                candidate = restore_secrets(
+                    {"sources": [dict(payload, id=source_id)]}, config.section("sources")
+                )["sources"][0]
+                cleaned = sanitise_sources([candidate])
+                if not cleaned:
+                    return jsonify(ok=False, message="Those settings aren't usable — check the type"), 200
+                message = build_source(cleaned[0]).check()
+            else:
+                message = sync.check(source_id)
+            return jsonify(ok=True, message=message)
         except SourceError as exc:
             return jsonify(ok=False, message=str(exc)), 200  # a failed test isn't an HTTP error
         except Exception as exc:  # noqa: BLE001 - report anything the source throws
@@ -220,7 +239,10 @@ def create_app(config, library, state, weather, password: str | None = None,
     def api_source_sync(source_id: str):
         if sync is None:
             return jsonify(error="Syncing is not enabled"), 503
-        sync.sync_now(source_id)
+        # Unlike Test, this one writes to the library, so it needs a source
+        # that's actually been saved.
+        if not sync.sync_now(source_id):
+            return jsonify(error="No such source — press Save settings first"), 404
         return jsonify(ok=True)
 
     @app.post("/api/sync")
