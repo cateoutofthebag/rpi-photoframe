@@ -531,6 +531,50 @@ def test_a_manually_deleted_photo_is_not_re_fetched(synced):
     assert len(library) == 0
 
 
+def test_progress_is_reported_while_a_sync_runs(synced, monkeypatch):
+    """A few hundred photos take minutes; the page needs to show movement
+    rather than the previous run's outcome."""
+    manager, config, library = synced
+    stock(manager, {"a": (1, 2, 3), "b": (4, 5, 6), "c": (7, 8, 9)})
+
+    seen: list[tuple] = []
+    real_add = library.add
+
+    def add_and_peek(*args, **kwargs):
+        entry = real_add(*args, **kwargs)
+        row = manager.status()[0]
+        seen.append((row["syncing"], row["progress"]["added"], row["progress"]["total"]))
+        return entry
+
+    monkeypatch.setattr(library, "add", add_and_peek)
+    manager._sync_one(config.section("sources")[0])
+
+    # Reported mid-run, counting up towards the number actually being fetched.
+    assert [row[0] for row in seen] == [True, True, True]
+    assert [row[1] for row in seen] == [0, 1, 2]
+    assert all(row[2] == 3 for row in seen)
+
+    # And cleared once it's over.
+    finished = manager.status()[0]
+    assert finished["syncing"] is False
+    assert finished["progress"] is None
+
+
+def test_progress_counts_only_what_needs_fetching(synced):
+    manager, config, library = synced
+    stock(manager, {"a": (1, 2, 3)})
+    manager._sync_one(config.section("sources")[0])
+
+    # Second run: nothing new, so nothing to report.
+    stock(manager, {"a": (1, 2, 3), "b": (4, 5, 6)})
+    totals: list[int] = []
+    real_add = library.add
+    manager.library.add = lambda *a, **k: (totals.append(manager._progress[1]), real_add(*a, **k))[1]
+    manager._sync_one(config.section("sources")[0])
+
+    assert totals == [1]  # only "b" counted, not the already-known "a"
+
+
 def test_sync_state_persists(synced, tmp_path):
     manager, config, library = synced
     stock(manager, {"a": (10, 20, 30)})

@@ -39,6 +39,10 @@ class SyncManager(threading.Thread):
         self._stop = threading.Event()
         self._forced: set[str] = set()
         self._active: str | None = None
+        # (imported so far, total to consider) for the source being synced.
+        # A few hundred photos take minutes, so the page needs something
+        # better to show than the previous run's outcome.
+        self._progress: tuple[int, int] = (0, 0)
 
     # ---------------------------------------------------------------- state
 
@@ -80,6 +84,8 @@ class SyncManager(threading.Thread):
         rows = []
         for source in self.config.section("sources"):
             record = self._record(source["id"])
+            syncing = self._active == source["id"]
+            added, total = self._progress
             rows.append({
                 "id": source["id"],
                 "name": source["name"],
@@ -89,7 +95,8 @@ class SyncManager(threading.Thread):
                 "last_run": record.get("last_run"),
                 "last_error": record.get("last_error"),
                 "last_added": record.get("last_added", 0),
-                "syncing": self._active == source["id"],
+                "syncing": syncing,
+                "progress": {"added": added, "total": total} if syncing else None,
             })
         return rows
 
@@ -188,6 +195,7 @@ class SyncManager(threading.Thread):
             items = source.list_items()[: int(config["limit"])]
             seen = {item.key for item in items}
             known: dict[str, str] = dict(record.get("items", {}))
+            self._progress = (0, sum(1 for item in items if item.key not in known))
 
             for item in items:
                 if self._stop.is_set():
@@ -208,6 +216,7 @@ class SyncManager(threading.Thread):
                     continue
                 known[item.key] = entry["id"]
                 added += 1
+                self._progress = (added, self._progress[1])
                 time.sleep(DOWNLOAD_PAUSE)
 
             # Worth doing even if we ran out of room — it frees some.
@@ -233,6 +242,7 @@ class SyncManager(threading.Thread):
             self._fail(record, name, f"unexpected error: {exc}")
         finally:
             self._active = None
+            self._progress = (0, 0)
             self._save()
 
     def _room_for_more(self) -> bool:

@@ -507,12 +507,17 @@ async function refreshSourceStatus() {
     rows.forEach((row) => {
       const line = document.querySelector(`[data-status="${row.id}"]`);
       if (!line) return;
-      if (row.last_error) {
+      // What's happening now beats what happened last time: a long import
+      // would otherwise sit there showing the previous run's error.
+      if (row.syncing) {
+        const done = row.progress;
+        line.textContent = done && done.total
+          ? `Syncing now — ${done.added} of ${done.total}`
+          : "Syncing now…";
+        line.className = "source-status small";
+      } else if (row.last_error) {
         line.textContent = `Last sync failed: ${row.last_error}`;
         line.className = "source-status small bad";
-      } else if (row.syncing) {
-        line.textContent = "Syncing now…";
-        line.className = "source-status small";
       } else {
         const when = row.last_run ? new Date(row.last_run * 1000).toLocaleTimeString() : "never";
         line.textContent = `${row.photos} photo(s) · last checked ${when}`;
