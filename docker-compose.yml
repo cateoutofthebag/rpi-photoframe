@@ -13,7 +13,7 @@ services:
     build: .
     image: rpi-photoframe:test
     container_name: photoframe
-    restart: unless-stopped
+    restart: always
     labels:
       # This image is built locally and isn't in any registry, so keep
       # Watchtower (if you run it) from trying to update it.
