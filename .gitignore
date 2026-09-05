@@ -1,6 +1,16 @@
 # Photos, thumbnails, render cache and runtime settings
 data/
 
+# photos/ is runtime content, not source: only .gitkeep is tracked so the
+# directory exists in a fresh clone. Images dropped in here are the user's,
+# and were leaving the repo permanently dirty -- which is how you stop
+# reading git status and miss the change that does matter.
+photos/*
+!photos/.gitkeep
+
+# Pre-git backup scatter. No .bak file is tracked in any of these repos.
+*.bak-*
+
 # Python
 __pycache__/
 *.py[cod]
