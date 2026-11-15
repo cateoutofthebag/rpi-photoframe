@@ -40,18 +40,63 @@ def redact_config(settings: dict) -> dict:
     return settings
 
 
+# The fields that say WHERE a stored credential gets sent. A placeholder is
+# only swapped for the real secret while every one of these is unchanged:
+# otherwise anyone who can reach the page could point a saved source at their
+# own server, press Test (or Save), and receive the password in the login.
+CREDENTIAL_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
+    "smb": ("server", "port", "domain", "username"),
+    "photoprism": ("url", "username"),
+}
+
+
+class SecretTargetChanged(ValueError):
+    """A stored secret was asked for on behalf of a different server or account."""
+
+
+def _target(source: dict, field: str) -> str:
+    value = source.get(field)
+    value = "" if value is None else str(value).strip()
+    if field == "url":
+        value = value.rstrip("/").lower()
+    elif field in ("server", "domain", "username"):
+        value = value.lower()
+    return value
+
+
 def restore_secrets(patch: dict, current: list[dict]) -> dict:
-    """Put real credentials back where the browser echoed the placeholder."""
+    """Put real credentials back where the browser echoed the placeholder.
+
+    Raises SecretTargetChanged when the source's type, server, URL or account
+    differs from the stored one: the secret was entered for THAT destination,
+    and must be typed again before it goes anywhere else.
+    """
     if not isinstance(patch.get("sources"), list):
         return patch
     by_id = {source.get("id"): source for source in current}
     for source in patch["sources"]:
         if not isinstance(source, dict):
             continue
-        existing = by_id.get(source.get("id"), {})
+        existing = by_id.get(source.get("id"))
         for field in SECRET_FIELDS:
-            if source.get(field) == SECRET_PLACEHOLDER:
-                source[field] = existing.get(field, "")
+            if source.get(field) != SECRET_PLACEHOLDER:
+                continue
+            if not existing or not existing.get(field):
+                source[field] = ""
+                continue
+            kind = existing.get("type")
+            same = source.get("type", kind) == kind and all(
+                _target(source, f) == _target(existing, f)
+                for f in CREDENTIAL_TARGET_FIELDS.get(kind, ())
+                if f in source
+            )
+            if not same:
+                name = existing.get("name") or existing.get("id")
+                raise SecretTargetChanged(
+                    f"{name}: the server or account changed, so type the "
+                    f"{field} again. A saved {field} is never sent somewhere new."
+                )
+            source[field] = existing[field]
     return patch
 
 
@@ -189,7 +234,10 @@ def create_app(config, library, state, weather, password: str | None = None,
         if not isinstance(patch, dict):
             return jsonify(error="Expected a JSON object"), 400
         previous_weather = config.section("weather")
-        patch = restore_secrets(patch, config.section("sources"))
+        try:
+            patch = restore_secrets(patch, config.section("sources"))
+        except SecretTargetChanged as exc:
+            return jsonify(error=str(exc)), 400
         updated = config.update(patch)
         if updated["weather"] != previous_weather:
             weather.refresh_now()
@@ -230,7 +278,7 @@ def create_app(config, library, state, weather, password: str | None = None,
             else:
                 message = sync.check(source_id)
             return jsonify(ok=True, message=message)
-        except SourceError as exc:
+        except (SourceError, SecretTargetChanged) as exc:
             return jsonify(ok=False, message=str(exc)), 200  # a failed test isn't an HTTP error
         except Exception as exc:  # noqa: BLE001 - report anything the source throws
             return jsonify(ok=False, message=f"Unexpected error: {exc}"), 200

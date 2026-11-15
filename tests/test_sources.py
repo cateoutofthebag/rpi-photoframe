@@ -692,3 +692,69 @@ def test_sources_api_without_sync_is_harmless(mirror_client):
     http, _, _ = mirror_client
     assert http.get("/api/sources").get_json()["sources"] == []
     assert http.post("/api/sources/x/test").status_code == 503
+
+
+# ------------------------------------------- a saved secret stays with its server
+
+
+def test_testing_a_saved_source_against_another_server_does_not_send_its_secret(sourced_client):
+    """The review finding: echo the placeholder with someone else's URL and the
+    frame used to log in to THEIR server with the real stored password."""
+    http, config, seen = sourced_client
+    config.update({"sources": [{
+        "type": "photoprism", "id": "pp1", "name": "PP", "url": "https://pp.example.com",
+        "album": "A", "username": "cate", "password": "stored-secret",
+    }]})
+
+    body = http.post("/api/sources/pp1/test", json={
+        "type": "photoprism", "url": "http://attacker.example", "album": "A",
+        "username": "cate", "password": SECRET_PLACEHOLDER,
+    }).get_json()
+
+    assert body["ok"] is False
+    assert "type the password again" in body["message"]
+    assert "stored-secret" not in str(seen)
+
+
+def test_a_changed_account_also_needs_the_password_again(sourced_client):
+    http, config, seen = sourced_client
+    config.update({"sources": [{
+        "type": "photoprism", "id": "pp1", "name": "PP", "url": "https://pp.example.com",
+        "album": "A", "username": "cate", "password": "stored-secret",
+    }]})
+    body = http.post("/api/sources/pp1/test", json={
+        "type": "photoprism", "url": "https://pp.example.com", "album": "A",
+        "username": "someone-else", "password": SECRET_PLACEHOLDER,
+    }).get_json()
+    assert body["ok"] is False and "stored-secret" not in str(seen)
+
+
+def test_saving_a_new_server_with_the_old_password_is_refused(tmp_path):
+    config = Config(tmp_path / "config.json")
+    app = create_app(config, PhotoLibrary(tmp_path), FrameState(), FakeWeather())
+    http = app.test_client()
+    http.put("/api/config", json={"sources": [
+        {"id": "s1", "type": "smb", "name": "NAS", "server": "nas", "share": "p", "password": "hunter2"},
+    ]})
+
+    response = http.put("/api/config", json={"sources": [
+        {"id": "s1", "type": "smb", "name": "NAS", "server": "evil.example", "share": "p",
+         "password": SECRET_PLACEHOLDER},
+    ]})
+
+    assert response.status_code == 400
+    assert config.section("sources")[0]["server"] == "nas"      # nothing saved
+    assert config.section("sources")[0]["password"] == "hunter2"
+
+
+def test_cosmetic_differences_still_count_as_the_same_server(sourced_client):
+    http, config, seen = sourced_client
+    config.update({"sources": [{
+        "type": "photoprism", "id": "pp1", "name": "PP", "url": "https://pp.example.com",
+        "album": "A", "username": "Cate", "password": "stored-secret",
+    }]})
+    http.post("/api/sources/pp1/test", json={
+        "type": "photoprism", "url": "https://PP.example.com/ ", "album": "B",
+        "username": "cate", "password": SECRET_PLACEHOLDER,
+    })
+    assert seen["password"] == "stored-secret"
