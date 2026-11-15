@@ -459,3 +459,23 @@ def test_the_control_api_accepts_the_new_actions(client):
     for action in ("info_burst", "info_hide", "toggle_info"):
         assert http.post("/api/control", json={"action": action}).status_code == 200
     assert state.drain() == ["info_burst", "info_hide", "toggle_info"]
+
+
+# ------------------------------------------------ requests from other websites
+
+
+def test_another_website_cannot_drive_the_frame(client):
+    http = client[0]
+    evil = {"Origin": "https://evil.example"}
+    assert http.post("/api/control", data={"action": "next"}, headers=evil).status_code == 403
+    assert http.post("/api/sync", headers=evil).status_code == 403
+    assert http.post("/api/storage/trim", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    assert http.post("/api/control", data={"action": "next"}, headers={"Origin": "null"}).status_code == 403
+
+
+def test_the_frames_own_page_and_scripts_still_work(client):
+    http = client[0]
+    same = {"Origin": "http://localhost", "Sec-Fetch-Site": "same-origin"}
+    assert http.post("/api/control", json={"action": "next"}, headers=same).status_code == 200
+    assert http.post("/api/control", json={"action": "next"}).status_code == 200   # curl: no Origin
+    assert http.get("/api/status", headers={"Origin": "https://evil.example"}).status_code == 200

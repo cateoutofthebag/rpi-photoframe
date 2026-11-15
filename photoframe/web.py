@@ -10,6 +10,7 @@ import hmac
 import io
 import socket
 from typing import Any
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, render_template, request, send_from_directory
 from PIL import Image
@@ -120,6 +121,30 @@ def create_app(config, library, state, weather, password: str | None = None,
     app = Flask(__name__, template_folder="templates", static_folder="static")
     app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES
     app.config["JSON_SORT_KEYS"] = False
+
+    @app.before_request
+    def refuse_cross_site_writes():
+        """Only this frame's own pages may change anything.
+
+        The frame usually runs without a password on a home network, and a
+        browser will happily send a form POST to it from any web page its user
+        happens to visit: enough to skip photos, start a sync or drop the
+        cache. Browsers say where such a request came from, so refuse the ones
+        that came from another site. Scripts and curl send neither header and
+        are unaffected.
+        """
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return None
+        if request.headers.get("Sec-Fetch-Site") == "cross-site":
+            return jsonify(error="Cross-site requests are not accepted"), 403
+        origin = request.headers.get("Origin")
+        if origin and origin != "null":
+            ours = {request.host, request.headers.get("X-Forwarded-Host", "")}
+            if urlsplit(origin).netloc not in ours:
+                return jsonify(error="Cross-site requests are not accepted"), 403
+        elif origin == "null":
+            return jsonify(error="Cross-site requests are not accepted"), 403
+        return None
 
     @app.before_request
     def require_password():
